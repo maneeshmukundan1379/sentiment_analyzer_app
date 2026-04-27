@@ -8,13 +8,11 @@ import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
-from core.config import FACEBOOK_GROUP_PAGES_LIMIT
 from core.platforms import FACEBOOK_PLATFORM
 from core.records import make_facebook_comment_record, make_facebook_record, make_record
 from core.text_utils import clean_text, contains_exact_keyword
 from core.time_window import cutoff_utc_timestamp
 from core.web_search import combined_text_search, path_parts
-from platform_agents.enrichment_agent import filter_matching_records
 
 try:
     from facebook_scraper import get_posts
@@ -25,6 +23,12 @@ except ImportError:  # pragma: no cover - optional dependency
 # Try browser-backed cookies first, then a public fallback path.
 def _facebook_cookie_candidates() -> list[object | None]:
     return ["from_browser", None]
+
+
+def _close_post_stream(post_stream: object) -> None:
+    close = getattr(post_stream, "close", None)
+    if callable(close):
+        close()
 
 
 # Limit discovery and scraping to Facebook-owned hosts.
@@ -212,25 +216,26 @@ def _search_discovered_facebook_groups(keyword: str, cutoff_utc: float, group_id
         for cookies in _facebook_cookie_candidates():
             try:
                 post_kwargs = {"group": group_id}
-                if FACEBOOK_GROUP_PAGES_LIMIT is not None:
-                    post_kwargs["pages"] = FACEBOOK_GROUP_PAGES_LIMIT
                 if cookies is not None:
                     post_kwargs["cookies"] = cookies
                 post_kwargs["options"] = {"comments": True}
                 post_stream = get_posts(**post_kwargs)
             except Exception:
                 continue
-            for post in post_stream:
-                community_name = str(post.get("page_name") or post.get("group") or group_id or "Facebook Group")
-                record = make_facebook_record(post, group_id, "Facebook Group")
-                if record is not None:
-                    if (not record["created_utc"] or record["created_utc"] >= cutoff_utc) and contains_exact_keyword(
-                        record["text"], keyword
-                    ):
-                        if record["message_id"] not in seen_ids:
-                            results.append(record)
-                            seen_ids.add(record["message_id"])
-                results.extend(_extract_matching_facebook_comments(post, keyword, community_name, seen_ids))
+            try:
+                for post in post_stream:
+                    community_name = str(post.get("page_name") or post.get("group") or group_id or "Facebook Group")
+                    record = make_facebook_record(post, group_id, "Facebook Group")
+                    if record is not None:
+                        if (not record["created_utc"] or record["created_utc"] >= cutoff_utc) and contains_exact_keyword(
+                            record["text"], keyword
+                        ):
+                            if record["message_id"] not in seen_ids:
+                                results.append(record)
+                                seen_ids.add(record["message_id"])
+                    results.extend(_extract_matching_facebook_comments(post, keyword, community_name, seen_ids))
+            finally:
+                _close_post_stream(post_stream)
             if results:
                 break
     return results
@@ -247,25 +252,26 @@ def _search_discovered_facebook_pages(keyword: str, cutoff_utc: float, page_ids:
         for cookies in _facebook_cookie_candidates():
             try:
                 post_kwargs = {"account": page_id}
-                if FACEBOOK_GROUP_PAGES_LIMIT is not None:
-                    post_kwargs["pages"] = FACEBOOK_GROUP_PAGES_LIMIT
                 if cookies is not None:
                     post_kwargs["cookies"] = cookies
                 post_kwargs["options"] = {"comments": True}
                 post_stream = get_posts(**post_kwargs)
             except Exception:
                 continue
-            for post in post_stream:
-                community_name = str(post.get("page_name") or post.get("group") or page_id or "Facebook Page")
-                record = make_facebook_record(post, page_id, "Facebook Page")
-                if record is not None:
-                    if (not record["created_utc"] or record["created_utc"] >= cutoff_utc) and contains_exact_keyword(
-                        record["text"], keyword
-                    ):
-                        if record["message_id"] not in seen_ids:
-                            results.append(record)
-                            seen_ids.add(record["message_id"])
-                results.extend(_extract_matching_facebook_comments(post, keyword, community_name, seen_ids))
+            try:
+                for post in post_stream:
+                    community_name = str(post.get("page_name") or post.get("group") or page_id or "Facebook Page")
+                    record = make_facebook_record(post, page_id, "Facebook Page")
+                    if record is not None:
+                        if (not record["created_utc"] or record["created_utc"] >= cutoff_utc) and contains_exact_keyword(
+                            record["text"], keyword
+                        ):
+                            if record["message_id"] not in seen_ids:
+                                results.append(record)
+                                seen_ids.add(record["message_id"])
+                    results.extend(_extract_matching_facebook_comments(post, keyword, community_name, seen_ids))
+            finally:
+                _close_post_stream(post_stream)
             if results:
                 break
     return results
@@ -315,7 +321,7 @@ def _search_facebook_with_web_discovery(keyword: str) -> list[dict]:
             )
         )
         seen_ids.add(message_id)
-    return filter_matching_records(results, keyword)
+    return results
 
 
 # Prefer scraper-based Facebook discovery, then fall back to public web snippets.
@@ -328,7 +334,6 @@ def search_keyword(keyword: str) -> list[dict]:
     group_ids, page_ids = _discover_facebook_entities(clean_keyword)
     records = _search_discovered_facebook_groups(clean_keyword, cutoff_utc, group_ids)
     records.extend(_search_discovered_facebook_pages(clean_keyword, cutoff_utc, page_ids))
-    records = filter_matching_records(records, clean_keyword)
     if records:
         return records
     return _search_facebook_with_web_discovery(clean_keyword)

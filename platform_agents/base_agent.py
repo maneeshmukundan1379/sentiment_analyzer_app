@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from collections.abc import Callable
 
 from agents import OpenAIChatCompletionsModel, Runner, set_tracing_disabled
 from openai import APIStatusError, AsyncOpenAI
@@ -49,10 +50,19 @@ async def run_agent_async(agent: object, user_prompt: str, output_type: type[Bas
     return result.final_output_as(output_type)
 
 
+async def _close_agent_client(agent: object) -> None:
+    model = getattr(agent, "model", None)
+    client = getattr(model, "_client", None)
+    close = getattr(client, "close", None)
+    if callable(close):
+        await close()
+
+
 # Retry transient Gemini failures before surfacing an error to the caller.
-def run_agent(agent: object, user_prompt: str, output_type: type[BaseModel]) -> BaseModel:
+def run_agent(agent_factory: Callable[[], object], user_prompt: str, output_type: type[BaseModel]) -> BaseModel:
     last_exc: Exception | None = None
     for attempt in range(4):
+        agent = agent_factory()
         loop = asyncio.new_event_loop()
         try:
             asyncio.set_event_loop(loop)
@@ -70,7 +80,14 @@ def run_agent(agent: object, user_prompt: str, output_type: type[BaseModel]) -> 
                 raise
             time.sleep(1.5 * (2**attempt))
         finally:
-            asyncio.set_event_loop(None)
-            loop.close()
+            try:
+                try:
+                    loop.run_until_complete(_close_agent_client(agent))
+                    loop.run_until_complete(loop.shutdown_asyncgens())
+                except Exception:
+                    pass
+            finally:
+                asyncio.set_event_loop(None)
+                loop.close()
     assert last_exc is not None
     raise last_exc

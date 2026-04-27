@@ -1,4 +1,5 @@
-gradio
+fastapi
+uvicorn
 fpdf2>=2.5.5
 openai-agents
 openai
@@ -6,6 +7,6 @@ pydantic
 python-dotenv
 requests
 snscrape
-duckduckgo-search
+ddgs
 facebook-scraper
 lxml_html_clean

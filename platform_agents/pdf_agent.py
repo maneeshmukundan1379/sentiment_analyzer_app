@@ -32,6 +32,13 @@ def _summary_counts(records: list[dict]) -> tuple[int, int, Counter]:
     return total_comments, total_posts, sentiment_counts
 
 
+def _platforms_in_records(records: list[dict]) -> list[str]:
+    present_platforms = {str(record.get("platform") or "Unknown") for record in records}
+    ordered_platforms = [platform for platform in PLATFORM_ORDER if platform in present_platforms]
+    extra_platforms = sorted(present_platforms.difference(PLATFORM_ORDER))
+    return ordered_platforms + extra_platforms
+
+
 # Render the per-platform summary cards and sentiment breakdown table.
 def _render_summary(pdf: FPDF, records: list[dict], title: str) -> None:
     total_comments, total_posts, sentiment_counts = _summary_counts(records)
@@ -86,6 +93,7 @@ def _render_summary(pdf: FPDF, records: list[dict], title: str) -> None:
 # Render the first-page platform count box below the title header.
 def _render_cover_platform_counts(pdf: FPDF, records: list[dict]) -> None:
     counts = Counter(str(record.get("platform") or "Unknown") for record in records)
+    labels = [(platform, counts.get(platform, 0)) for platform in _platforms_in_records(records)]
     box_x = pdf.l_margin
     box_y = pdf.get_y()
     box_w = pdf.w - pdf.l_margin - pdf.r_margin
@@ -99,12 +107,7 @@ def _render_cover_platform_counts(pdf: FPDF, records: list[dict]) -> None:
     pdf.set_font("Helvetica", "B", 11)
     pdf.cell(box_w - 8, 5, "Platform Match Counts", align="C", new_x="LMARGIN", new_y="NEXT")
 
-    labels = [
-        ("Reddit", counts.get("Reddit", 0)),
-        ("Facebook", counts.get("Facebook", 0)),
-        ("X.com", counts.get("X.com", 0)),
-    ]
-    segment_w = (box_w - 8) / 3
+    segment_w = (box_w - 8) / len(labels)
     for index, (label, value) in enumerate(labels):
         current_x = box_x + 4 + index * segment_w
         pdf.set_xy(current_x, box_y + 10)
@@ -144,9 +147,11 @@ def _render_details(pdf: FPDF, records: list[dict]) -> None:
             f"Comment: {record.get('text', '')}",
             f"Date: {format_timestamp(float(record.get('created_utc') or 0))}",
             f"Sentiment: {record.get('sentiment', 'Unknown')}",
-            f"Suggested Response: {record.get('response', '') or 'N/A'}",
             f"{current_link_label}: {record.get('permalink', '')}",
         ]
+        response_text = str(record.get("response") or "").strip()
+        if response_text:
+            lines.insert(-1, f"Suggested Response: {response_text}")
         for line in lines:
             clean_line = _pdf_safe_text(line.strip())
             if not clean_line:
@@ -224,7 +229,7 @@ def generate_pdf_report(records_payload: str, keyword: str = "") -> tuple[str, s
     pdf.ln(10)
     _render_cover_platform_counts(pdf, records)
 
-    for index, platform in enumerate(PLATFORM_ORDER):
+    for index, platform in enumerate(_platforms_in_records(records)):
         platform_records = [record for record in records if record.get("platform") == platform]
         _render_platform_section(pdf, platform, platform_records, add_page=index > 0)
 

@@ -8,7 +8,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 from core.formatting import dedupe_records, format_records_for_textbox, platform_counts, sort_records
-from core.platforms import FACEBOOK_PLATFORM, REDDIT_PLATFORM, X_PLATFORM, platform_list_text
+from core.platforms import FACEBOOK_PLATFORM, PLATFORM_ORDER, REDDIT_PLATFORM, X_PLATFORM, platform_list_text
 from core.records import serialize_records
 from core.time_window import lookback_past_text
 from platform_agents import facebook_agent, reddit_agent, x_agent
@@ -31,13 +31,35 @@ async def _run_platform_search(
         return platform_name, [], str(exc)
 
 
-# Launch the three platform collectors concurrently for a single keyword.
-async def _search_all_platforms_async(keyword: str) -> list[tuple[str, list[dict], str | None]]:
+# Launch the selected platform collectors concurrently for a single keyword.
+async def _search_platforms_async(keyword: str, platforms: list[str]) -> list[tuple[str, list[dict], str | None]]:
+    searches = []
+    if REDDIT_PLATFORM in platforms:
+        searches.append(_run_platform_search(REDDIT_PLATFORM, reddit_agent.search_keyword, keyword))
+    if X_PLATFORM in platforms:
+        searches.append(
+            _run_platform_search(X_PLATFORM, x_agent.search_keyword, keyword, x_agent.get_last_warning)
+        )
+    if FACEBOOK_PLATFORM in platforms:
+        searches.append(_run_platform_search(FACEBOOK_PLATFORM, facebook_agent.search_keyword, keyword))
     return await asyncio.gather(
-        _run_platform_search(REDDIT_PLATFORM, reddit_agent.search_keyword, keyword),
-        _run_platform_search(X_PLATFORM, x_agent.search_keyword, keyword, x_agent.get_last_warning),
-        _run_platform_search(FACEBOOK_PLATFORM, facebook_agent.search_keyword, keyword),
+        *searches,
     )
+
+
+def _selected_platforms(platform: str) -> list[str]:
+    clean_platform = (platform or "All").strip()
+    if clean_platform == "All":
+        return PLATFORM_ORDER
+    if clean_platform in PLATFORM_ORDER:
+        return [clean_platform]
+    return PLATFORM_ORDER
+
+
+def _selected_platform_text(platforms: list[str]) -> str:
+    if len(platforms) == len(PLATFORM_ORDER):
+        return platform_list_text()
+    return platforms[0]
 
 
 # Support async execution whether or not the caller is already inside an event loop.
@@ -53,15 +75,18 @@ def _run_async(coro: object) -> object:
 
 
 # Orchestrate collection, deduplication, enrichment, and status formatting for the UI.
-def search_social_keyword(keyword: str) -> tuple[str, str, str, str, str]:
+def search_social_keyword(keyword: str, platform: str = "All") -> tuple[str, str, str, str, str]:
     clean_keyword = (keyword or "").strip()
     if not clean_keyword:
         return "Enter a keyword to search.", "", "", "", ""
 
+    selected_platforms = _selected_platforms(platform)
+    selected_platform_text = _selected_platform_text(selected_platforms)
+
     # Merge platform output before sending the combined record set to Gemini.
     all_records: list[dict] = []
     warnings: list[str] = []
-    platform_results = _run_async(_search_all_platforms_async(clean_keyword))
+    platform_results = _run_async(_search_platforms_async(clean_keyword, selected_platforms))
 
     for platform_name, records, error in platform_results:
         all_records.extend(records)
@@ -75,13 +100,13 @@ def search_social_keyword(keyword: str) -> tuple[str, str, str, str, str]:
     try:
         enriched = enrich_records(all_records)
     except Exception as exc:
-        warnings.append(f"Gemini enrichment: {exc}")
+        warnings.append(str(exc))
         enriched = all_records
 
     if not enriched:
         warning_text = f" Warnings: {'; '.join(warnings)}" if warnings else ""
         return (
-            f"No {platform_list_text()} posts/comments found for '{clean_keyword}' in the {lookback_past_text()}.{warning_text}",
+            f"No {selected_platform_text} posts/comments found for '{clean_keyword}' in the {lookback_past_text()}.{warning_text}",
             "",
             "",
             clean_keyword,
@@ -90,11 +115,10 @@ def search_social_keyword(keyword: str) -> tuple[str, str, str, str, str]:
 
     # Report a compact cross-platform summary back to the Gradio frontend.
     counts = platform_counts(enriched)
-    status = (
-        f"Found {len(enriched)} matches for '{clean_keyword}' "
-        f"({REDDIT_PLATFORM}: {counts.get(REDDIT_PLATFORM, 0)}, {FACEBOOK_PLATFORM}: {counts.get(FACEBOOK_PLATFORM, 0)}, "
-        f"{X_PLATFORM}: {counts.get(X_PLATFORM, 0)})."
+    platform_summary = ", ".join(
+        f"{platform_name}: {counts.get(platform_name, 0)}" for platform_name in selected_platforms
     )
+    status = f"Found {len(enriched)} matches for '{clean_keyword}' ({platform_summary})."
     if warnings:
         status += " Warnings: " + "; ".join(warnings)
     return status, format_records_for_textbox(enriched, clean_keyword), "", clean_keyword, serialize_records(enriched)

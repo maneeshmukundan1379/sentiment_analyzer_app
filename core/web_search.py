@@ -5,6 +5,7 @@ Shared web-search helpers.
 from __future__ import annotations
 
 import os
+import warnings
 from urllib.parse import urlparse
 
 import requests
@@ -12,9 +13,12 @@ import requests
 from core.env import load_app_env
 from core.time_window import search_time_filter
 try:
-    from duckduckgo_search import DDGS
+    from ddgs import DDGS
 except ImportError:  # pragma: no cover - optional dependency
-    DDGS = None
+    try:
+        from duckduckgo_search import DDGS
+    except ImportError:
+        DDGS = None
 
 # Load env-backed search credentials before helper functions run.
 load_app_env()
@@ -42,7 +46,7 @@ def serper_text_search(query: str) -> list[dict]:
         }
         if serper_filter is not None:
             payload["tbs"] = serper_filter
-        response = requests.post(
+        with requests.post(
             "https://google.serper.dev/search",
             headers={
                 "X-API-KEY": api_key,
@@ -50,9 +54,9 @@ def serper_text_search(query: str) -> list[dict]:
             },
             json=payload,
             timeout=30,
-        )
-        response.raise_for_status()
-        response_payload = response.json()
+        ) as response:
+            response.raise_for_status()
+            response_payload = response.json()
         organic_items = response_payload.get("organic") or []
         if not organic_items:
             break
@@ -84,15 +88,23 @@ def duckduckgo_text_search(query: str) -> list[dict]:
     if DDGS is None:
         return []
     _, ddg_filter = search_time_filter()
+    search_args = {"max_results": None}
+    fallback_args = {}
+    if ddg_filter is not None:
+        search_args["timelimit"] = ddg_filter
+        fallback_args["timelimit"] = ddg_filter
+
     try:
-        if ddg_filter is None:
-            return list(DDGS().text(query, max_results=None))
-        return list(DDGS().text(query, timelimit=ddg_filter, max_results=None))
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=r".*duckduckgo_search.*renamed to `ddgs`.*", category=RuntimeWarning)
+            with DDGS() as ddgs:
+                return list(ddgs.text(query, **search_args))
     except Exception:
         try:
-            if ddg_filter is None:
-                return list(DDGS().text(query))
-            return list(DDGS().text(query, timelimit=ddg_filter))
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=r".*duckduckgo_search.*renamed to `ddgs`.*", category=RuntimeWarning)
+                with DDGS() as ddgs:
+                    return list(ddgs.text(query, **fallback_args))
         except Exception:
             return []
 

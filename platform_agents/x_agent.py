@@ -15,7 +15,6 @@ from core.platforms import X_PLATFORM
 from core.text_utils import clean_text, contains_exact_keyword
 from core.time_window import cutoff_utc_timestamp
 from core.web_search import combined_text_search, path_parts
-from platform_agents.enrichment_agent import filter_matching_records
 
 # Keep the latest X warning so the UI can describe when fallback was used.
 _LAST_WARNING: str | None = None
@@ -134,14 +133,14 @@ def _search_x_with_api(keyword: str, cutoff_utc: float) -> list[dict]:
         if next_token:
             params["next_token"] = next_token
 
-        response = requests.get(
+        with requests.get(
             f"{X_API_BASE_URL}/tweets/search/recent",
             headers={"Authorization": f"Bearer {X_BEARER_TOKEN}"},
             params=params,
             timeout=30,
-        )
-        response.raise_for_status()
-        payload = response.json()
+        ) as response:
+            response.raise_for_status()
+            payload = response.json()
         tweets = payload.get("data") or []
         if not tweets:
             break
@@ -240,4 +239,4 @@ def search_keyword(keyword: str) -> list[dict]:
         elif api_error:
             _LAST_WARNING = f"{api_error}; public X status-link fallback returned no matches"
 
-    return filter_matching_records(results, clean_keyword)
+    return results

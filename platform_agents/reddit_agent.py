@@ -4,25 +4,29 @@ Reddit search agent for Sentiment Analyzer.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import requests
 
-from core.config import REDDIT_USER_AGENT
+from core.config import (
+    REDDIT_COMMENT_TREE_WORKERS,
+    REDDIT_USER_AGENT,
+)
 from core.records import make_reddit_comment_record, make_reddit_post_record
 from core.text_utils import clean_text, contains_exact_keyword
 from core.time_window import cutoff_utc_timestamp, reddit_time_filter
-from platform_agents.enrichment_agent import filter_matching_records
 
 
 # Fetch Reddit listing JSON with a stable user agent and timeout.
 def _reddit_get_json(url: str, params: dict | None = None) -> dict:
-    response = requests.get(
+    with requests.get(
         url,
         params=params or {},
         headers={"User-Agent": REDDIT_USER_AGENT},
         timeout=30,
-    )
-    response.raise_for_status()
-    return response.json()
+    ) as response:
+        response.raise_for_status()
+        return response.json()
 
 
 # Search Reddit submissions globally and keep only recent keyword matches.
@@ -166,23 +170,40 @@ def search_keyword(keyword: str) -> list[dict]:
     posts = _search_posts(clean_keyword, cutoff_utc)
     global_comments, fallback_posts = _search_comments_globally(clean_keyword, cutoff_utc)
 
+    records_for_comment_trees: list[dict] = []
     for record in posts + fallback_posts:
         if record["message_id"] not in seen_ids:
             all_records.append(record)
             seen_ids.add(record["message_id"])
-        try:
+            records_for_comment_trees.append(record)
+
+    max_workers = max(1, min(REDDIT_COMMENT_TREE_WORKERS, len(records_for_comment_trees)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {}
+        for record in records_for_comment_trees:
             post_path = record["permalink"].replace("https://www.reddit.com", "")
-            comments = _extract_matching_comments(post_path, clean_keyword, cutoff_utc, record.get("subject", ""))
-            for comment in comments:
-                if comment["message_id"] not in seen_ids:
-                    all_records.append(comment)
-                    seen_ids.add(comment["message_id"])
-        except Exception:
-            continue
+            futures[
+                executor.submit(
+                    _extract_matching_comments,
+                    post_path,
+                    clean_keyword,
+                    cutoff_utc,
+                    record.get("subject", ""),
+                )
+            ] = record
+        for future in as_completed(futures):
+            try:
+                comments = future.result()
+                for comment in comments:
+                    if comment["message_id"] not in seen_ids:
+                        all_records.append(comment)
+                        seen_ids.add(comment["message_id"])
+            except Exception:
+                continue
 
     for comment in global_comments:
         if comment["message_id"] not in seen_ids:
             all_records.append(comment)
             seen_ids.add(comment["message_id"])
 
-    return filter_matching_records(all_records, clean_keyword)
+    return all_records

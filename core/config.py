@@ -39,7 +39,9 @@ def optional_positive_int_env(name: str) -> int | None:
 
 
 # Expose the effective app configuration as module-level constants.
-LOOKBACK_DAYS = safe_int_env("SOCIAL_LOOKBACK_DAYS", 7)
-FACEBOOK_GROUP_PAGES_LIMIT = optional_positive_int_env("FACEBOOK_GROUP_PAGES")
+LOOKBACK_DAYS = 7
+REDDIT_COMMENT_TREE_WORKERS = safe_int_env("REDDIT_COMMENT_TREE_WORKERS", 5)
+AI_BATCH_SIZE = safe_int_env("AI_BATCH_SIZE", 20)
+AI_BATCH_WORKERS = safe_int_env("AI_BATCH_WORKERS", 3)
 X_API_BASE_URL = (os.getenv("X_API_BASE_URL") or "https://api.x.com/2").strip().rstrip("/")
 X_BEARER_TOKEN = (os.getenv("X_BEARER_TOKEN") or "").strip()
