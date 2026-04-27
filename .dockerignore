@@ -1,0 +1,11 @@
+.env
+.env.*
+.git
+.gradio
+.venv
+__pycache__
+*.py[cod]
+frontend/dist
+frontend/node_modules
+node_modules
+.DS_Store
