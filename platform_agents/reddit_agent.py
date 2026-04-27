@@ -5,6 +5,7 @@ Reddit search agent for Sentiment Analyzer.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urlparse
 
 import requests
 
@@ -12,9 +13,11 @@ from core.config import (
     REDDIT_COMMENT_TREE_WORKERS,
     REDDIT_USER_AGENT,
 )
-from core.records import make_reddit_comment_record, make_reddit_post_record
+from core.platforms import REDDIT_PLATFORM
+from core.records import make_record, make_reddit_comment_record, make_reddit_post_record
 from core.text_utils import clean_text, contains_exact_keyword
 from core.time_window import cutoff_utc_timestamp, reddit_time_filter
+from core.web_search import combined_text_search, path_parts
 
 
 # Fetch Reddit listing JSON with a stable user agent and timeout.
@@ -31,6 +34,59 @@ def _reddit_get_json(url: str, params: dict | None = None) -> dict:
     ) as response:
         response.raise_for_status()
         return response.json()
+
+
+def _is_reddit_url(url: str) -> bool:
+    host = urlparse(url).netloc.lower()
+    return host.endswith("reddit.com")
+
+
+def _reddit_permalink(url: str) -> str:
+    parsed = urlparse(url)
+    return f"https://www.reddit.com{parsed.path}"
+
+
+def _reddit_kind(url: str) -> str:
+    parts = path_parts(url)
+    return "comment" if "comments" in parts and len(parts) >= 6 else "post"
+
+
+# Fall back to time-filtered public web snippets when Reddit blocks cloud JSON requests.
+def _search_reddit_with_web_discovery(keyword: str) -> list[dict]:
+    results: list[dict] = []
+    seen_urls: set[str] = set()
+    for item in combined_text_search(
+        [
+            f'site:reddit.com/r "{keyword}"',
+            f'site:reddit.com/r/*/comments "{keyword}"',
+            f'"{keyword}" site:reddit.com',
+        ]
+    ):
+        url = str(item.get("href") or "")
+        if not _is_reddit_url(url):
+            continue
+        permalink = _reddit_permalink(url)
+        if permalink in seen_urls:
+            continue
+        subject = clean_text(str(item.get("title") or ""))
+        text = clean_text(str(item.get("body") or ""), subject)
+        if not text or not contains_exact_keyword(text, keyword):
+            continue
+        results.append(
+            make_record(
+                platform=REDDIT_PLATFORM,
+                message_id=f"reddit_web_{permalink}",
+                kind=_reddit_kind(permalink),
+                created_utc=0,
+                user_id="Unknown",
+                community="Reddit",
+                subject=subject[:140],
+                text=text,
+                permalink=permalink,
+            )
+        )
+        seen_urls.add(permalink)
+    return results
 
 
 # Search Reddit submissions globally and keep only recent keyword matches.
@@ -171,8 +227,14 @@ def search_keyword(keyword: str) -> list[dict]:
     cutoff_utc = cutoff_utc_timestamp()
     all_records: list[dict] = []
     seen_ids: set[str] = set()
-    posts = _search_posts(clean_keyword, cutoff_utc)
-    global_comments, fallback_posts = _search_comments_globally(clean_keyword, cutoff_utc)
+    try:
+        posts = _search_posts(clean_keyword, cutoff_utc)
+        global_comments, fallback_posts = _search_comments_globally(clean_keyword, cutoff_utc)
+    except requests.HTTPError as exc:
+        response = getattr(exc, "response", None)
+        if response is not None and response.status_code == 403:
+            return _search_reddit_with_web_discovery(clean_keyword)
+        raise
 
     records_for_comment_trees: list[dict] = []
     for record in posts + fallback_posts:
