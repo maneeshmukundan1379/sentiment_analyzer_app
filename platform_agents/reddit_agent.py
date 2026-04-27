@@ -22,7 +22,11 @@ def _reddit_get_json(url: str, params: dict | None = None) -> dict:
     with requests.get(
         url,
         params=params or {},
-        headers={"User-Agent": REDDIT_USER_AGENT},
+        headers={
+            "User-Agent": REDDIT_USER_AGENT,
+            "Accept": "application/json,text/plain,*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
         timeout=30,
     ) as response:
         response.raise_for_status()

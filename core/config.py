@@ -12,7 +12,10 @@ from core.env import load_app_env
 load_app_env()
 
 # Keep shared HTTP identity and runtime switches in one place.
-REDDIT_USER_AGENT = "agents-sentiment-analyzer/1.0"
+REDDIT_USER_AGENT = (
+    os.getenv("REDDIT_USER_AGENT")
+    or "Mozilla/5.0 (compatible; sentiment-analyzer-app/1.0; +https://github.com/maneeshmukundan1379/sentiment_analyzer_app)"
+).strip()
 
 
 # Parse integer environment values while falling back safely on bad input.
