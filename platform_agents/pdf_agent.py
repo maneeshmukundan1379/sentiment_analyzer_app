@@ -12,7 +12,7 @@ import unicodedata
 from fpdf import FPDF
 
 from core.platforms import PLATFORM_ORDER
-from core.formatting import format_timestamp, link_label
+from core.formatting import CENTRAL_TIME, format_timestamp, link_label
 from core.records import deserialize_records
 
 
@@ -221,7 +221,7 @@ def generate_pdf_report(records_payload: str, keyword: str = "") -> tuple[str, s
     pdf.cell(
         pdf.w - pdf.l_margin - pdf.r_margin - 10,
         6,
-        _pdf_safe_text(datetime.now(timezone.utc).strftime("Generated on %Y-%m-%d %H:%M UTC")),
+        _pdf_safe_text(datetime.now(timezone.utc).astimezone(CENTRAL_TIME).strftime("Generated on %Y-%m-%d %H:%M %Z")),
         align="C",
         new_y="NEXT",
     )

@@ -6,16 +6,19 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from core.platforms import PLATFORM_LINK_LABELS, PLATFORM_ORDER, platform_list_text
 from core.time_window import lookback_past_text
+
+CENTRAL_TIME = ZoneInfo("America/Chicago")
 
 
 # Render timestamps consistently for both the UI and the PDF layer.
 def format_timestamp(created_utc: float) -> str:
     if not created_utc or created_utc <= 0:
         return "N/A"
-    return datetime.fromtimestamp(created_utc, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return datetime.fromtimestamp(created_utc, tz=timezone.utc).astimezone(CENTRAL_TIME).strftime("%Y-%m-%d %H:%M %Z")
 
 
 # Pick the right source-link label for each platform block.
