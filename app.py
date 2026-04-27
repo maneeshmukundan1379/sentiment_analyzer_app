@@ -13,6 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from core.env import load_app_env
@@ -47,6 +48,7 @@ class PdfResponse(BaseModel):
 
 app = FastAPI(title="Sentiment Analyzer App API", version="1.0.0")
 GENERATED_REPORTS: dict[str, Path] = {}
+FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 
 
 def _cors_origins() -> list[str]:
@@ -123,3 +125,7 @@ def download_pdf(report_id: str) -> FileResponse:
 
     file_path = _validated_report_path(str(file_path))
     return FileResponse(path=file_path, media_type="application/pdf", filename=file_path.name)
+
+
+if FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")

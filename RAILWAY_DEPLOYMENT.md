@@ -9,7 +9,7 @@ The app has two parts:
 - Backend: the FastAPI API that performs searches and generates PDFs.
 - Frontend: the React web page users open in the browser.
 
-On Railway, deploy these as two separate services from the same GitHub repository.
+On Railway, deploy these together as one service. FastAPI serves both the API and the built React frontend.
 
 ## Before You Start
 
@@ -23,7 +23,7 @@ Do not commit or upload secret files such as:
 
 Railway will store the API keys securely as environment variables.
 
-## Backend Service
+## Railway Service
 
 1. Open Railway.
 2. Click `New Project`.
@@ -35,21 +35,23 @@ Railway will store the API keys securely as environment variables.
 agents/2_openai/sentiment_analyzer_app
 ```
 
-6. Set the backend build command:
+6. Set the build command:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt && cd frontend && npm install && npm run build
 ```
 
-7. Set the backend start command:
+7. Set the start command:
 
 ```bash
 uvicorn app:app --host 0.0.0.0 --port $PORT
 ```
 
-## Backend Environment Variables
+The repository also includes `railway.json` and `Procfile`, so Railway should pick up these commands automatically. If Railway shows a different command, manually set the commands above.
 
-In the Railway backend service, open `Variables` and add these values:
+## Environment Variables
+
+In the Railway service, open `Variables` and add these values:
 
 ```text
 GEMINI_API_KEY=your_gemini_api_key
@@ -61,60 +63,27 @@ X_API_BASE_URL=https://api.x.com/2
 SERPER_API_KEY=your_serper_api_key
 ```
 
-After the frontend is deployed, also add this backend variable:
+Because the frontend and backend are served from the same Railway service, `VITE_API_BASE_URL` is not required.
+
+`CORS_ORIGINS` is usually not required for the single-service setup. If you later host the frontend separately, add:
 
 ```text
 CORS_ORIGINS=https://your-frontend-url.up.railway.app
 ```
 
-Replace `https://your-frontend-url.up.railway.app` with the actual Railway URL of your frontend service.
-
-## Frontend Service
-
-1. In the same Railway project, create another service.
-2. Choose the same GitHub repository.
-3. Set the frontend service root directory to:
-
-```text
-agents/2_openai/sentiment_analyzer_app/frontend
-```
-
-4. Set the frontend build command:
-
-```bash
-npm install && npm run build
-```
-
-5. Set the frontend start command:
-
-```bash
-npm run preview -- --host 0.0.0.0 --port $PORT
-```
-
-## Frontend Environment Variable
-
-In the Railway frontend service, open `Variables` and add:
-
-```text
-VITE_API_BASE_URL=https://your-backend-url.up.railway.app
-```
-
-Replace `https://your-backend-url.up.railway.app` with the actual Railway URL of your backend service.
-
 ## Final Deployment Steps
 
-1. Redeploy the backend service.
-2. Redeploy the frontend service.
-3. Open the frontend Railway URL in your browser.
-4. Search for a keyword, such as `OptioRx`.
-5. Confirm that search results appear.
-6. Generate a PDF to confirm PDF export works.
+1. Redeploy the Railway service.
+2. Open the Railway public URL in your browser.
+3. Search for a keyword, such as `OptioRx`.
+4. Confirm that search results appear.
+5. Generate a PDF to confirm PDF export works.
 
 ## Important Notes
 
 - Railway environment variables replace local `.env` values.
 - The app should not need your local computer once deployed.
-- The frontend needs `VITE_API_BASE_URL` so it knows where the backend API is.
-- The backend needs `CORS_ORIGINS` so it allows browser requests from the frontend.
+- The React frontend is built into `frontend/dist` during deployment.
+- FastAPI serves the built frontend from the same Railway service.
 - Keep API keys only in Railway variables, not in GitHub.
 
