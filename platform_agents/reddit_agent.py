@@ -5,6 +5,8 @@ Reddit search agent for Sentiment Analyzer.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
+import re
 from urllib.parse import urlparse
 
 import requests
@@ -51,6 +53,34 @@ def _reddit_kind(url: str) -> str:
     return "comment" if "comments" in parts and len(parts) >= 6 else "post"
 
 
+def _parse_relative_time_to_timestamp(*parts: str) -> float:
+    text = " ".join(part for part in parts if part).lower()
+    if not text:
+        return 0
+
+    if "yesterday" in text:
+        return (datetime.now(timezone.utc) - timedelta(days=1)).timestamp()
+
+    match = re.search(
+        r"\b(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks)\b",
+        text,
+    )
+    if match is None:
+        return 0
+
+    amount = int(match.group(1))
+    unit = match.group(2)
+    if unit.startswith(("m", "min")):
+        delta = timedelta(minutes=amount)
+    elif unit.startswith(("h", "hr", "hour")):
+        delta = timedelta(hours=amount)
+    elif unit.startswith(("d", "day")):
+        delta = timedelta(days=amount)
+    else:
+        delta = timedelta(weeks=amount)
+    return (datetime.now(timezone.utc) - delta).timestamp()
+
+
 # Fall back to time-filtered public web snippets when Reddit blocks cloud JSON requests.
 def _search_reddit_with_web_discovery(keyword: str) -> list[dict]:
     results: list[dict] = []
@@ -77,7 +107,10 @@ def _search_reddit_with_web_discovery(keyword: str) -> list[dict]:
                 platform=REDDIT_PLATFORM,
                 message_id=f"reddit_web_{permalink}",
                 kind=_reddit_kind(permalink),
-                created_utc=0,
+                created_utc=_parse_relative_time_to_timestamp(
+                    str(item.get("body") or ""),
+                    str(item.get("title") or ""),
+                ),
                 user_id="Unknown",
                 community="Reddit",
                 subject=subject[:140],
