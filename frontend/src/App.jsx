@@ -3,6 +3,7 @@ import './App.css'
 import KeywordInput from './components/KeywordInput'
 import PdfPanel from './components/PdfPanel'
 import ResultsPanel from './components/ResultsPanel'
+import { buildInsights, parseRecordsPayload } from './lib/insights'
 
 function App() {
   const apiBaseUrl = useMemo(
@@ -18,6 +19,8 @@ function App() {
   const [isSearching, setIsSearching] = useState(false)
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   const hasExportableResults = recordsPayload && recordsPayload !== '[]'
+  const records = useMemo(() => parseRecordsPayload(recordsPayload), [recordsPayload])
+  const insights = useMemo(() => buildInsights(records), [records])
 
   const handleSearch = async (event) => {
     event.preventDefault()
@@ -124,7 +127,7 @@ function App() {
             isSearching={isSearching}
           />
 
-          <ResultsPanel status={status} results={results} />
+          <ResultsPanel status={status} results={results} records={records} insights={insights} />
         </div>
 
         <aside className="secondary-column">
@@ -132,6 +135,7 @@ function App() {
             onGeneratePdf={handleGeneratePdf}
             isGeneratingPdf={isGeneratingPdf}
             hasExportableResults={hasExportableResults}
+            insights={insights}
           />
         </aside>
       </section>

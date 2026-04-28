@@ -1,12 +1,24 @@
-function PdfPanel({ onGeneratePdf, isGeneratingPdf, hasExportableResults }) {
+function PdfPanel({ onGeneratePdf, isGeneratingPdf, hasExportableResults, insights }) {
   return (
     <section className="card pdf-card">
       <div className="section-heading">
         <div>
           <h2>PDF Report</h2>
-          <p>Create a downloadable report from the latest search results.</p>
+          <p>Exports the visual summary, color-coded sentiment, and response cues.</p>
         </div>
       </div>
+      {hasExportableResults && (
+        <div className="pdf-summary">
+          <span>
+            <strong>{insights.total}</strong>
+            mentions
+          </span>
+          <span>
+            <strong>{insights.negativeCount}</strong>
+            to review
+          </span>
+        </div>
+      )}
       <div className="pdf-row">
         <button
           type="button"
