@@ -141,7 +141,7 @@ def _render_details(pdf: FPDF, records: list[dict]) -> None:
         )
         pdf.set_font("Helvetica", size=11)
         lines = [
-            f"User ID: {record.get('user_id', 'Unknown')}",
+            f"Username: {record.get('user_id', 'Unknown')}",
             f"Location: {record.get('location', 'N/A')}",
             f"Subject: {record.get('subject', '') or 'N/A'}",
             f"Comment: {record.get('text', '')}",

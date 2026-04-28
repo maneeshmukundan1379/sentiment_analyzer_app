@@ -42,6 +42,17 @@ def make_record(
     }
 
 
+def _reddit_display_author(data: dict) -> str:
+    """Prefer Reddit username string over internal author_fullname (t2_*)."""
+    author = data.get("author")
+    if isinstance(author, str) and author.strip() and author.strip() != "[deleted]":
+        return author.strip()
+    fullname = data.get("author_fullname")
+    if isinstance(fullname, str) and fullname.strip():
+        return fullname.strip()
+    return "[deleted]"
+
+
 # Normalize Reddit submission payloads into the shared record format.
 def make_reddit_post_record(data: dict, body: str) -> dict:
     subject = clean_text(str(data.get("title") or ""))
@@ -50,7 +61,7 @@ def make_reddit_post_record(data: dict, body: str) -> dict:
         message_id=f"t3_{data.get('id')}",
         kind="post",
         created_utc=float(data.get("created_utc") or 0),
-        user_id=str(data.get("author_fullname") or data.get("author") or "[deleted]"),
+        user_id=_reddit_display_author(data),
         community=str(data.get("subreddit_name_prefixed") or ""),
         subject=subject,
         text=body,
@@ -67,7 +78,7 @@ def make_reddit_comment_record(data: dict, body: str, subject: str = "") -> dict
         message_id=f"t1_{data.get('id')}",
         kind="comment",
         created_utc=float(data.get("created_utc") or 0),
-        user_id=str(data.get("author_fullname") or data.get("author") or "[deleted]"),
+        user_id=_reddit_display_author(data),
         community=str(data.get("subreddit_name_prefixed") or ""),
         subject=clean_subject,
         text=body,

@@ -95,4 +95,10 @@ def enrich_records(records: list[dict]) -> list[dict]:
         record["sentiment"] = item.get("sentiment", "Unknown")
         record["location"] = item.get("location", "N/A")
         record["response"] = item.get("response", "")
+    # Surface profile/geo hints (e.g. Reddit flair, X bio location) when the model leaves location blank.
+    for record in records:
+        loc = str(record.get("location") or "").strip()
+        hint = str(record.get("location_hint") or "").strip()
+        if (not loc or loc.upper() == "N/A") and hint:
+            record["location"] = hint
     return records

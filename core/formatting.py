@@ -38,7 +38,7 @@ def format_records_for_textbox(records: list[dict], keyword: str) -> str:
             "\n".join(
                 [
                     f"Platform: {platform}",
-                    f"User ID: {record.get('user_id', 'Unknown')}",
+                    f"Username: {record.get('user_id', 'Unknown')}",
                     f"Location: {record.get('location', 'N/A')}",
                     f"Subject: {record.get('subject', '') or 'N/A'}",
                     f"Comment: {record['text']}",

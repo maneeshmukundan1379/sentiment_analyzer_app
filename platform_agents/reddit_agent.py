@@ -62,6 +62,27 @@ def _reddit_kind(url: str) -> str:
     return "comment" if "comments" in parts and len(parts) >= 6 else "post"
 
 
+def _reddit_subreddit_from_path(url: str) -> str:
+    parts = path_parts(_reddit_permalink(url))
+    if len(parts) >= 2 and parts[0] == "r":
+        return f"r/{parts[1]}"
+    return ""
+
+
+def _reddit_username_from_serp(title: str, body: str) -> str:
+    """Best-effort author from search title/snippet (web fallback when JSON is blocked)."""
+    combined = f"{title}\n{body}"
+    for pattern in (
+        r"(?:Posted by|posted by)\s+[uU]/([\w\-]{2,40})\b",
+        r"\b[uU]/([\w\-]{2,40})\b",
+        r"reddit\.com/user/([\w\-]{2,40})\b",
+    ):
+        match = re.search(pattern, combined, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return "Unknown"
+
+
 def _parse_relative_time_to_timestamp(*parts: str) -> float:
     text = " ".join(part for part in parts if part).lower()
     if not text:
@@ -120,6 +141,8 @@ def _search_reddit_with_web_discovery(keyword: str) -> list[dict]:
             str(item.get("body") or ""),
             str(item.get("title") or ""),
         )
+        community = _reddit_subreddit_from_path(permalink) or "Reddit"
+        user_from_serp = _reddit_username_from_serp(subject, text)
 
         def _add_row(
             *,
@@ -134,8 +157,8 @@ def _search_reddit_with_web_discovery(keyword: str) -> list[dict]:
                     message_id=f"reddit_web_{row_permalink}",
                     kind=kind_val,
                     created_utc=created_utc,
-                    user_id="Unknown",
-                    community="Reddit",
+                    user_id=user_from_serp,
+                    community=community,
                     subject=subj[:140],
                     text=body_text,
                     permalink=row_permalink,
